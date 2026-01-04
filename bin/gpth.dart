@@ -234,8 +234,11 @@ Future<void> main(final List<String> arguments) async {
     // Cleanup services
     await ServiceContainer.instance.dispose();
   } catch (e) {
-    logError('Fatal error: $e');
-    _logger.quit();
+    _exitWithMessage(
+      1,
+      'Fatal error: $e',
+      showInteractivePrompt: true,
+    );
   }
 }
 
@@ -274,7 +277,7 @@ Never _exitWithMessage(
     logError(fullMessage);
   } catch (_) {}
 
-  if (showInteractivePrompt && Platform.environment['INTERACTIVE'] == 'true') {
+  if (showInteractivePrompt && (Platform.environment['INTERACTIVE'] == 'true' || stdin.hasTerminal)) {
     logPrint(
       '[gpth ${code != 0 ? 'quitted :(' : 'finished :)'} (code $code) - press enter to close]',
     );
@@ -1147,12 +1150,35 @@ Future<bool> _needsCleanOutputDirectory(
 ) async {
   final File progressFile = File(path.join(outputDir.path, 'progress.json'));
   if (await progressFile.exists() && !config.disableResumeCheck) return false;
-  return !(await outputDir
-      .list()
-      .where(
-        (final e) => path.absolute(e.path) != path.absolute(config.inputPath),
-      )
-      .isEmpty);
+
+  final entries = await outputDir.list().toList();
+
+  // Filter out the input path, progress.json, and .DS_Store
+  final significantEntries = entries.where((e) {
+    final absPath = path.absolute(e.path);
+    final baseName = path.basename(absPath);
+    if (absPath == path.absolute(config.inputPath)) return false;
+    if (baseName.toLowerCase() == 'progress.json') return false;
+    if (baseName == '.DS_Store') return false;
+    return true;
+  }).toList();
+
+  // If there are no other significant entries, we don't need to clean.
+  if (significantEntries.isEmpty) {
+    // Optional: Clean up the ignored .DS_Store files anyway.
+    for (final entry in entries) {
+      if (path.basename(entry.path) == '.DS_Store') {
+        try {
+          await entry.delete();
+        } catch (_) {
+          // Ignore errors, not critical.
+        }
+      }
+    }
+    return false;
+  }
+
+  return true;
 }
 
 /// **OUTPUT DIRECTORY CLEANUP**

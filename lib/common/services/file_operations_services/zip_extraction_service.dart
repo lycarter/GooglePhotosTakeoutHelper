@@ -40,16 +40,42 @@ class ZipExtractionService with LoggerMixin {
     // Users sometimes mistakenly pick a real photo library folder (e.g. "Pictures") as the
     // extraction target. Recursive deletion here would wipe unrelated data.
     if (await dir.exists()) {
-      // If directory exists and contains anything, refuse to proceed.
-      // (We intentionally do not offer an interactive confirmation here because this service
-      // is used by both interactive and non-interactive flows.)
-      final bool isEmpty = await dir.list(followLinks: false).isEmpty;
-      if (!isEmpty) {
+      // If directory exists, check for content other than .DS_Store
+      final entries = await dir.list(followLinks: false).toList();
+      final otherEntries =
+          entries.where((e) => p.basename(e.path) != '.DS_Store').toList();
+
+      if (otherEntries.isNotEmpty) {
+        logError('❌ SAFETY ERROR: Extraction directory is not empty!');
+        logError('Directory: ${dir.path}');
+        logError(
+          'GooglePhotosTakeoutHelper refuses to extract files into a non-empty directory to prevent accidental data loss.',
+        );
+        logError('Please either:');
+        logError('  1. Delete everything inside that folder');
+        logError('  2. Choose a different, empty folder');
         throw FileSystemException(
           'Refusing to extract ZIPs into a non-empty directory for safety. '
           'Choose a NEW EMPTY folder for extraction (e.g. "GPTH_Extract").',
           dir.path,
         );
+      } else {
+        // Directory is either empty or contains only .DS_Store files.
+        // Delete any .DS_Store files found.
+        for (final entry in entries) {
+          if (p.basename(entry.path) == '.DS_Store') {
+            try {
+              await entry.delete();
+              logDebug(
+                'Removed .DS_Store file from extraction directory: ${entry.path}',
+              );
+            } catch (e) {
+              logWarning(
+                'Could not delete .DS_Store file: ${entry.path}. Error: $e',
+              );
+            }
+          }
+        }
       }
     }
 
