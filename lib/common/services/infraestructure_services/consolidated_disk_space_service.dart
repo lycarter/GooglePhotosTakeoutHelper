@@ -197,13 +197,17 @@ class ConsolidatedDiskSpaceService with LoggerMixin {
   /// Gets disk free space on macOS using df
   Future<int?> _getSpaceMacOS(final String path) async {
     try {
-      final result = await Process.run('df', ['-B1', path]);
+      // Use -k for kilobytes (portable BSD/macOS)
+      final result = await Process.run('df', ['-k', path]);
       if (result.exitCode == 0) {
         final lines = result.stdout.toString().split('\n');
         if (lines.length >= 2) {
           final parts = lines[1].split(RegExp(r'\s+'));
           if (parts.length >= 4) {
-            return int.tryParse(parts[3]);
+            final kb = int.tryParse(parts[3]);
+            if (kb != null) {
+              return kb * 1024;
+            }
           }
         }
       }
