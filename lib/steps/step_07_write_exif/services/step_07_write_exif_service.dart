@@ -337,29 +337,34 @@ class WriteExifProcessingService with LoggerMixin {
       if (byTagset.isEmpty) return;
 
       final keys = byTagset.keys.toList();
-      for (final k in keys) {
-        final list = byTagset[k];
-        if (list == null || list.isEmpty) {
-          byTagset.remove(k);
-          continue;
-        }
+      for (int i = 0; i < keys.length; i += maxConcurrency) {
+        final chunk = keys.skip(i).take(maxConcurrency);
+        await Future.wait(
+          chunk.map((final k) async {
+            final list = byTagset[k];
+            if (list == null || list.isEmpty) {
+              byTagset.remove(k);
+              return;
+            }
 
-        while (list.length > capPerChunk) {
-          final sub = list.sublist(0, capPerChunk);
-          await writeBatchSafe(
-            sub,
-            useArgFile: true,
-            isVideoBatch: isVideoBatch,
-          );
-          list.removeRange(0, sub.length);
-        }
+            while (list.length > capPerChunk) {
+              final sub = list.sublist(0, capPerChunk);
+              await writeBatchSafe(
+                sub,
+                useArgFile: true,
+                isVideoBatch: isVideoBatch,
+              );
+              list.removeRange(0, sub.length);
+            }
 
-        await writeBatchSafe(
-          list,
-          useArgFile: useArgFile,
-          isVideoBatch: isVideoBatch,
+            await writeBatchSafe(
+              list,
+              useArgFile: useArgFile,
+              isVideoBatch: isVideoBatch,
+            );
+            byTagset.remove(k);
+          }),
         );
-        byTagset.remove(k);
       }
     }
 
@@ -854,8 +859,10 @@ class WriteExifProcessingService with LoggerMixin {
       final bool flushImagesWithArg =
           imagesQueued > (Platform.isWindows ? 30 : 60);
       final bool flushVideosWithArg = videosQueued > 6;
-      await flushImageBatch(useArgFile: flushImagesWithArg);
-      await flushVideoBatch(useArgFile: flushVideosWithArg);
+      await Future.wait([
+        flushImageBatch(useArgFile: flushImagesWithArg),
+        flushVideoBatch(useArgFile: flushVideosWithArg),
+      ]);
 
       if (finalFlushBar != null) {
         finalFlushDone = finalFlushTotal;
