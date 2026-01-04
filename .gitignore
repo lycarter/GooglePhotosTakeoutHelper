@@ -24,6 +24,7 @@ pubspec.lock
 /test/generated
 /test/debug*
 .DS_Store
+gpth
 
 #Github_ignore folder
 .github_ignore
